@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-WP SQLite is a desktop application for viewing and editing SQLite databases in [WordPress Studio](https://developer.wordpress.com/studio/) installations. It's built with Electron and React, providing a user-friendly interface for database management.
+WP SQLite is a desktop application for viewing and editing databases in WordPress installations. It supports both SQLite (WordPress Studio) and MySQL (traditional WordPress) databases. Built with Electron and React, providing a user-friendly interface for database management.
 
 WordPress Studio is a desktop application for local WordPress development. For more information, see the [Studio GitHub repository](https://github.com/Automattic/studio/).
 
@@ -12,6 +12,7 @@ WordPress Studio is a desktop application for local WordPress development. For m
 - **React**: UI library for the renderer process
 - **Tailwind CSS**: Utility-first CSS framework for styling
 - **better-sqlite3**: SQLite3 bindings for Node.js
+- **mysql2**: MySQL client for Node.js with promise support
 - **Webpack**: Module bundler for the renderer process
 - **Electron Forge**: Build and packaging tool
 
@@ -20,20 +21,25 @@ WordPress Studio is a desktop application for local WordPress development. For m
 ```
 wp-sqlite/
 ├── main/
-│   └── index.js              # Main Electron process with IPC handlers
+│   ├── index.js                 # Main Electron process with IPC handlers
+│   ├── database-abstraction.js  # Database adapter layer (SQLite & MySQL)
+│   └── wp-config-parser.js      # wp-config.php parser for MySQL credentials
 ├── renderer/
 │   ├── src/
-│   │   ├── App.js           # Main React component
-│   │   ├── components/      # React components (DatabaseViewer, TableList, TableViewer, EditRowModal, RecentDirectories)
-│   │   ├── index.js         # React entry point
-│   │   └── styles.css       # Tailwind CSS styles
-│   ├── index.html           # HTML template
-│   └── about.html           # About window
+│   │   ├── App.js               # Main React component with database type selection
+│   │   ├── components/          # React components (AddRowModal, DatabaseTypeSelector,
+│   │   │                        # DatabaseViewer, EditRowModal, RecentDirectories, 
+│   │   │                        # TableList, TableViewer)
+│   │   ├── index.js             # React entry point
+│   │   └── styles.css           # Tailwind CSS styles
+│   ├── index.html               # HTML template
+│   └── about.html               # About window
 ├── scripts/
 │   └── generate-app-icons.js    # Icon generation script
-├── preload.js               # Electron preload script (security bridge)
-├── webpack.config.js        # Webpack configuration
-└── forge.config.js          # Electron Forge configuration
+├── preload.js                   # Electron preload script (security bridge)
+├── webpack.config.js            # Webpack configuration
+├── forge.config.js              # Electron Forge configuration
+└── MYSQL-SUPPORT.md             # MySQL implementation documentation
 ```
 
 ## Architecture and Patterns
@@ -51,14 +57,21 @@ The app uses Electron's IPC (Inter-Process Communication) for secure communicati
 ### IPC Handlers
 
 Main process handlers available:
-- `select-directory`: Directory picker for WordPress Studio installation
-- `get-database-info`: Database path and table count
-- `get-tables`: List all tables
-- `get-table-data`: Paginated table data
-- `get-table-row-count`: Total row count
-- `execute-query`: Custom SQL query execution
-- `update-row`, `delete-row`, `insert-row`: CRUD operations
+- `select-directory`: Directory picker for WordPress installations
+- `get-database-types`: Returns available database types for a directory (['sqlite'], ['mysql'], or ['sqlite', 'mysql'])
+- `select-database-type`: Sets the active database type for a directory
+- `get-selected-database-type`: Gets the previously selected database type
+- `get-database-info`: Database path and table count (requires databaseType parameter)
+- `get-tables`: List all tables (filters out hidden tables starting with `_`, requires databaseType)
+- `get-table-data`: Paginated table data (requires databaseType)
+- `get-table-row-count`: Total row count (requires databaseType)
+- `execute-query`: Custom SQL query execution (requires databaseType)
+- `update-row`, `delete-row`, `insert-row`: CRUD operations (require databaseType)
 - `get-recent-directories`, `select-recent-directory`: Recent directory management
+- `quit-app`: Safely quit the application
+- `openExternal`: Open URLs in default browser (via shell.openExternal)
+
+**Note:** All database operation handlers now require a `databaseType` parameter ('sqlite' or 'mysql').
 
 ### React Component Patterns
 
@@ -67,36 +80,64 @@ Main process handlers available:
 - **Props**: Pass data and callbacks via props
 - **Event Handlers**: Prefix handler functions with `handle` (e.g., `handleEdit`, `handleDelete`)
 
-### Database Operations
+### Database Operations & Architecture
 
-**Critical Security Rule:** All SQL queries MUST use parameterized statements to prevent SQL injection:
+The app uses a **database abstraction layer** (`main/database-abstraction.js`) that provides a unified interface for both SQLite and MySQL:
 
 ```javascript
-// ✅ Good - Parameterized values with validated table name
-// Note: Table names cannot be parameterized, so validate against a whitelist
-const validTables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(t => t.name);
-if (!validTables.includes(tableName)) {
-  throw new Error('Invalid table name');
-}
-const stmt = db.prepare(`SELECT * FROM ${tableName} LIMIT ? OFFSET ?`);
-const data = stmt.all(limit, offset);
-
-// ❌ Bad - Direct concatenation of user values (SQL injection risk!)
-const query = `SELECT * FROM users WHERE name = '${userName}'`;  // NEVER DO THIS
-// Correct version: db.prepare('SELECT * FROM users WHERE name = ?').all(userName);
+// Create adapter for specific database type
+const adapter = createDatabaseAdapter(wpDirectory, 'sqlite', dbPath); // or 'mysql'
+await adapter.connect();
+const tables = await adapter.getTables();
+await adapter.disconnect();
 ```
 
-### WordPress Studio Database Location
+**Database Adapters:**
+- `SQLiteAdapter`: Uses better-sqlite3 for synchronous operations
+- `MySQLAdapter`: Uses mysql2/promise for asynchronous operations, reads credentials from wp-config.php on each connection
 
-The app expects the SQLite database at:
-```
-{wordpress-studio-directory}/wp-content/database/.ht.sqlite
+**Critical Security Rules:**
+
+1. **SQL Injection Prevention**: All queries use parameterized statements
+2. **MySQL Localhost Only**: MySQL connections restricted to localhost/127.0.0.1/::1
+3. **No Credential Caching**: MySQL credentials read fresh from wp-config.php every time
+4. **Table Name Validation**: Table names validated against actual database tables
+
+```javascript
+// ✅ Good - Using database abstraction layer
+const adapter = createDatabaseAdapter(wpDirectory, databaseType, dbPath);
+await adapter.connect();
+const data = await adapter.getTableData(tableName, offset, limit);
+await adapter.disconnect();
+
+// ✅ Good - MySQL adapter handles parameterization internally
+// For MySQL: connection.query('SELECT * FROM ?? LIMIT ? OFFSET ?', [tableName, limit, offset])
+// For SQLite: db.prepare('SELECT * FROM table LIMIT ? OFFSET ?').all(limit, offset)
+
+// ❌ Bad - Direct string concatenation (SQL injection risk!)
+const query = `SELECT * FROM ${tableName} WHERE name = '${userName}'`; // NEVER DO THIS
 ```
 
-Example paths:
-- macOS: `/Users/username/Studio/my-site/wp-content/database/.ht.sqlite`
-- Windows: `C:\Users\username\Studio\my-site\wp-content\database\.ht.sqlite`
-- Linux: `/home/username/Studio/my-site/wp-content/database/.ht.sqlite`
+### Database Detection
+
+The app detects available database types:
+
+**SQLite Detection:**
+```
+{wordpress-directory}/wp-content/database/.ht.sqlite
+```
+
+**MySQL Detection:**
+```
+{wordpress-directory}/wp-config.php (must contain DB_HOST, DB_NAME, DB_USER, DB_PASSWORD)
+```
+
+**Detection Flow:**
+1. Check for `.ht.sqlite` file → Add 'sqlite' to available types
+2. Parse wp-config.php for MySQL credentials → Add 'mysql' to available types (if localhost)
+3. If both exist → Prompt user to choose
+4. If only one exists → Auto-select
+5. Remember user's choice in electron-store
 
 ## Development Workflow
 
@@ -115,6 +156,14 @@ When working on the app:
 2. Webpack watches for changes in renderer code
 3. React components hot reload automatically
 4. Main process changes require app restart
+
+### Building for Release
+
+The project uses GitHub Actions for automated builds on release:
+- Workflow: `.github/workflows/release.yml`
+- Triggers on new GitHub release creation
+- Builds for Windows (Squirrel, WiX), macOS (DMG, ZIP), and Linux (DEB, RPM, ZIP)
+- Artifacts automatically uploaded to the release
 
 ## Code Style and Conventions
 
@@ -203,29 +252,79 @@ New-Item -ItemType Directory -Path "$env:USERPROFILE\test-wp-studio\wp-content\d
 
 **Note:** This project does not currently have automated tests. When adding code, ensure manual testing covers:
 - Directory selection and validation
-- Table listing
+- Database type detection and selection
+- Table listing (both SQLite and MySQL)
 - Data viewing with pagination
-- Row editing and deletion
+- Row editing, adding, and deletion
 - Error states and edge cases
+- MySQL credential validation
+- Localhost-only MySQL connections
+
+## MySQL Support
+
+### wp-config.php Parsing
+
+The `wp-config-parser.js` module extracts MySQL credentials from wp-config.php:
+- Supports single and double quoted values
+- Handles escaped quotes
+- Ignores comments
+- Validates extracted values
+
+Required constants: `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`
+Optional constants: `DB_CHARSET`, `DB_COLLATE`
+
+### Localhost Validation
+
+Valid MySQL hosts (case-insensitive):
+- `localhost`
+- `127.0.0.1`
+- `::1`
+- `localhost:3306`
+- `127.0.0.1:3306`
+- `::1:3306`
+
+Any other host will be rejected with a security error.
+
+### Schema Differences
+
+| Operation | SQLite | MySQL |
+|-----------|--------|-------|
+| List tables | `SELECT name FROM sqlite_master WHERE type='table'` | `SHOW TABLES` |
+| Table schema | `PRAGMA table_info(table)` | `DESCRIBE table` or `INFORMATION_SCHEMA.COLUMNS` |
+| Primary key detection | `pk = 1` in PRAGMA result | `Key = 'PRI'` in DESCRIBE result |
+
+The database abstraction layer normalizes these differences into a common schema format:
+```javascript
+{
+  name: string,
+  type: string,
+  nullable: boolean,
+  primaryKey: boolean,
+  defaultValue: any
+}
+```
 
 ## Security Considerations
 
 ### Critical Security Rules
 
-1. **SQL Injection Prevention**: ALWAYS use parameterized statements, NEVER concatenate user input into SQL queries
-2. **Directory Validation**: Only allow selection of valid WordPress Studio directories with expected structure
-3. **Read-only Primary Keys**: Primary key fields must not be editable to prevent data corruption
-4. **Secure IPC**: Use `contextBridge` to expose limited API surface to renderer
-5. **No Remote Code Execution**: All SQL executes locally, no network requests
+1. **SQL Injection Prevention**: ALWAYS use parameterized statements via the database abstraction layer
+2. **MySQL Localhost Only**: Only localhost MySQL connections permitted, enforced in wp-config-parser.js
+3. **No Credential Caching**: MySQL credentials read from wp-config.php on EVERY connection
+4. **Read-only Primary Keys**: Primary key fields must not be editable to prevent data corruption
+5. **Secure IPC**: Use `contextBridge` to expose limited API surface to renderer
+6. **No Credential Storage**: Never cache MySQL credentials in electron-store or memory
+7. **Connection Cleanup**: Always call adapter.disconnect() in finally blocks
 
 ### When Fixing Bugs or Adding Features
 
 - Validate all user input
-- Use parameterized SQL queries
+- Use the database abstraction layer for all database operations
+- Never bypass the adapter layer to access databases directly
 - Sanitize file paths
-- Handle errors without exposing sensitive information
+- Handle errors without exposing sensitive information (especially MySQL credentials)
 - Follow Electron security best practices
-- Review the `.github/copilot-instructions.md` file and make nessecary updates
+- Review the `.github/copilot-instructions.md` file and make necessary updates
 - When performing `.github/copilot-instructions.md` updates, keep them as minimal but as clear as possible
 - Only add new files when they are specifically required for the feature
 
@@ -248,9 +347,11 @@ The app supports macOS, Windows, and Linux:
 ### Core Dependencies
 
 - `better-sqlite3`: Direct SQLite access (main process only)
-- `electron-store`: Persistent storage for recent directories
+- `mysql2`: MySQL client with promise and prepared statement support (main process only)
+- `electron-store`: Persistent storage for recent directories and database type preferences
 - `react` and `react-dom`: UI framework
 - `tailwindcss`: Styling
+- `@heroicons/react`: Icon library for UI components
 
 ### Development Dependencies
 
@@ -267,17 +368,21 @@ The app supports macOS, Windows, and Linux:
 
 ## Common Pitfalls to Avoid
 
-1. **Don't** access SQLite directly from renderer process
-2. **Don't** use string concatenation for SQL queries
-3. **Don't** forget to handle errors in IPC handlers
-4. **Don't** block the main process with long-running operations
-5. **Don't** modify primary keys when editing rows
-6. **Don't** forget to validate directory structure before accessing database
-7. **Don't** use synchronous file system operations in the main process unnecessarily
+1. **Don't** access databases directly from renderer process - always use IPC
+2. **Don't** bypass the database abstraction layer - use createDatabaseAdapter()
+3. **Don't** use string concatenation for SQL queries - adapters handle parameterization
+4. **Don't** forget to disconnect() adapters after use - can leak connections
+5. **Don't** cache MySQL credentials - read fresh from wp-config.php every time
+6. **Don't** allow remote MySQL connections - only localhost permitted
+7. **Don't** modify primary keys when editing rows
+8. **Don't** forget to validate directory structure before accessing database
+9. **Don't** expose credentials in error messages or logs
 
 ## Helpful Context
 
-- The app is specifically designed for WordPress Studio SQLite databases
-- WordPress Studio uses `.ht.sqlite` as the database filename
-- Database path: `wp-content/database/.ht.sqlite` relative to Studio installation
-- The app stores recent directories using `electron-store` for quick access
+- The app supports both WordPress Studio (SQLite) and traditional WordPress (MySQL) installations
+- SQLite database path: `wp-content/database/.ht.sqlite`
+- MySQL credentials: `wp-config.php` (DB_HOST, DB_NAME, DB_USER, DB_PASSWORD)
+- The app stores recent directories and database type preferences using `electron-store`
+- Database type selection is remembered per directory
+- For detailed MySQL implementation, see `MYSQL-SUPPORT.md`

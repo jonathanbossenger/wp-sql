@@ -2,6 +2,8 @@ const { app, BrowserWindow, ipcMain, dialog, Notification, Menu } = require('ele
 const path = require('path');
 const fs = require('fs');
 const Database = require('better-sqlite3');
+const { hasValidMySQLConfig } = require('./wp-config-parser');
+const { createDatabaseAdapter } = require('./database-abstraction');
 
 let mainWindow = null;
 let store = null;
@@ -16,7 +18,8 @@ const initStore = async () => {
   const { default: Store } = await import('electron-store');
   store = new Store({
     defaults: {
-      recentDirectories: []
+      recentDirectories: [],
+      databaseTypes: {}
     }
   });
 };
@@ -32,8 +35,8 @@ const addToRecentDirectories = (directory) => {
   return updatedDirectories;
 };
 
-// Function to check if directory is a WordPress Studio installation
-const isWordPressStudioDirectory = async (directory) => {
+// Function to check if directory has SQLite database
+const hasSQLiteDatabase = async (directory) => {
   try {
     const dbPath = path.join(directory, 'wp-content', 'database', '.ht.sqlite');
     await fs.promises.access(dbPath);
@@ -41,6 +44,27 @@ const isWordPressStudioDirectory = async (directory) => {
   } catch (error) {
     return false;
   }
+};
+
+// Function to detect available database types
+const detectDatabaseTypes = async (directory) => {
+  const types = [];
+  
+  if (await hasSQLiteDatabase(directory)) {
+    types.push('sqlite');
+  }
+  
+  if (hasValidMySQLConfig(directory)) {
+    types.push('mysql');
+  }
+  
+  return types;
+};
+
+// Function to check if directory is a valid WordPress installation
+const isWordPressDirectory = async (directory) => {
+  const types = await detectDatabaseTypes(directory);
+  return types.length > 0;
 };
 
 // Function to get SQLite database path
@@ -134,17 +158,17 @@ const createMenu = () => {
 ipcMain.handle('select-directory', async () => {
   const result = await dialog.showOpenDialog({
     properties: ['openDirectory'],
-    title: 'Select WordPress Studio Installation Directory',
+    title: 'Select WordPress Installation Directory',
   });
   
   if (!result.canceled) {
     const directory = result.filePaths[0];
-    // Verify it's a WordPress Studio directory
-    if (await isWordPressStudioDirectory(directory)) {
+    // Verify it's a WordPress directory
+    if (await isWordPressDirectory(directory)) {
       addToRecentDirectories(directory);
       return directory;
     } else {
-      throw new Error('Selected directory is not a WordPress Studio installation (no .ht.sqlite database found)');
+      throw new Error('Selected directory is not a WordPress installation (no database found)');
     }
   }
   return null;
@@ -158,7 +182,7 @@ ipcMain.handle('get-recent-directories', async () => {
 
 // Handle selecting a recent directory
 ipcMain.handle('select-recent-directory', async (event, directory) => {
-  if (await isWordPressStudioDirectory(directory)) {
+  if (await isWordPressDirectory(directory)) {
     addToRecentDirectories(directory);
     return directory;
   } else {
@@ -167,56 +191,89 @@ ipcMain.handle('select-recent-directory', async (event, directory) => {
       const filteredDirectories = recentDirectories.filter(dir => dir !== directory);
       store.set('recentDirectories', filteredDirectories);
     }
-    throw new Error('Selected directory is no longer a valid WordPress Studio installation');
+    throw new Error('Selected directory is no longer a valid WordPress installation');
   }
 });
 
-// Get database info
-ipcMain.handle('get-database-info', async (event, wpDirectory) => {
-  const dbPath = getDatabasePath(wpDirectory);
+// Get available database types for a directory
+ipcMain.handle('get-database-types', async (event, wpDirectory) => {
   try {
-    const db = new Database(dbPath, { readonly: true });
-    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all();
-    const visibleTables = filterHiddenTables(tables);
-    db.close();
+    return await detectDatabaseTypes(wpDirectory);
+  } catch (error) {
+    console.error('Error detecting database types:', error);
+    throw error;
+  }
+});
+
+// Select database type for a directory
+ipcMain.handle('select-database-type', async (event, wpDirectory, databaseType) => {
+  if (!store) return;
+  const databaseTypes = store.get('databaseTypes', {});
+  databaseTypes[wpDirectory] = databaseType;
+  store.set('databaseTypes', databaseTypes);
+});
+
+// Get selected database type for a directory
+ipcMain.handle('get-selected-database-type', async (event, wpDirectory) => {
+  if (!store) return null;
+  const databaseTypes = store.get('databaseTypes', {});
+  return databaseTypes[wpDirectory] || null;
+});
+
+// Get database info
+ipcMain.handle('get-database-info', async (event, wpDirectory, databaseType) => {
+  const dbPath = getDatabasePath(wpDirectory);
+  const adapter = createDatabaseAdapter(wpDirectory, databaseType, dbPath);
+  
+  try {
+    await adapter.connect();
+    const tables = await adapter.getTables();
+    await adapter.disconnect();
+    
     return {
-      path: dbPath,
-      tableCount: visibleTables.length
+      path: databaseType === 'sqlite' ? dbPath : 'MySQL Database',
+      tableCount: tables.length,
+      databaseType: databaseType
     };
   } catch (error) {
     console.error('Error getting database info:', error);
+    await adapter.disconnect();
     throw error;
   }
 });
 
 // Get list of tables
-ipcMain.handle('get-tables', async (event, wpDirectory) => {
+ipcMain.handle('get-tables', async (event, wpDirectory, databaseType) => {
   const dbPath = getDatabasePath(wpDirectory);
+  const adapter = createDatabaseAdapter(wpDirectory, databaseType, dbPath);
+  
   try {
-    const db = new Database(dbPath, { readonly: true });
-    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all();
-    db.close();
-    const visibleTables = filterHiddenTables(tables);
-    return visibleTables.map(t => t.name);
+    await adapter.connect();
+    const tables = await adapter.getTables();
+    await adapter.disconnect();
+    return tables;
   } catch (error) {
     console.error('Error getting tables:', error);
+    await adapter.disconnect();
     throw error;
   }
 });
 
 // Get table data with pagination
-ipcMain.handle('get-table-data', async (event, wpDirectory, tableName, offset = 0, limit = 50) => {
+ipcMain.handle('get-table-data', async (event, wpDirectory, tableName, offset = 0, limit = 50, databaseType) => {
   const dbPath = getDatabasePath(wpDirectory);
+  const adapter = createDatabaseAdapter(wpDirectory, databaseType, dbPath);
+  
   try {
-    const db = new Database(dbPath, { readonly: true });
+    await adapter.connect();
     
     // Get table schema
-    const schema = db.prepare(`PRAGMA table_info(${tableName})`).all();
+    const schema = await adapter.getTableSchema(tableName);
     
     // Get data
-    const data = db.prepare(`SELECT * FROM ${tableName} LIMIT ? OFFSET ?`).all(limit, offset);
+    const data = await adapter.getTableData(tableName, offset, limit);
     
-    db.close();
+    await adapter.disconnect();
     
     return {
       schema: schema,
@@ -225,120 +282,112 @@ ipcMain.handle('get-table-data', async (event, wpDirectory, tableName, offset = 
     };
   } catch (error) {
     console.error('Error getting table data:', error);
+    await adapter.disconnect();
     throw error;
   }
 });
 
 // Get table row count
-ipcMain.handle('get-table-row-count', async (event, wpDirectory, tableName) => {
+ipcMain.handle('get-table-row-count', async (event, wpDirectory, tableName, databaseType) => {
   const dbPath = getDatabasePath(wpDirectory);
+  const adapter = createDatabaseAdapter(wpDirectory, databaseType, dbPath);
+  
   try {
-    const db = new Database(dbPath, { readonly: true });
-    const result = db.prepare(`SELECT COUNT(*) as count FROM ${tableName}`).get();
-    db.close();
-    return result.count;
+    await adapter.connect();
+    const count = await adapter.getRowCount(tableName);
+    await adapter.disconnect();
+    return count;
   } catch (error) {
     console.error('Error getting row count:', error);
+    await adapter.disconnect();
     throw error;
   }
 });
 
 // Execute custom query
-ipcMain.handle('execute-query', async (event, wpDirectory, query) => {
+ipcMain.handle('execute-query', async (event, wpDirectory, query, databaseType) => {
   const dbPath = getDatabasePath(wpDirectory);
+  const adapter = createDatabaseAdapter(wpDirectory, databaseType, dbPath);
+  
   try {
-    const db = new Database(dbPath);
-    let result;
-    
-    // Check if it's a SELECT query
-    if (query.trim().toUpperCase().startsWith('SELECT')) {
-      result = db.prepare(query).all();
-    } else {
-      const stmt = db.prepare(query);
-      result = stmt.run();
-    }
-    
-    db.close();
+    await adapter.connect();
+    const result = await adapter.executeQuery(query);
+    await adapter.disconnect();
     return result;
   } catch (error) {
     console.error('Error executing query:', error);
+    await adapter.disconnect();
     throw error;
   }
 });
 
 // Update row
-ipcMain.handle('update-row', async (event, wpDirectory, tableName, rowId, data) => {
+ipcMain.handle('update-row', async (event, wpDirectory, tableName, rowId, data, databaseType) => {
   const dbPath = getDatabasePath(wpDirectory);
+  const adapter = createDatabaseAdapter(wpDirectory, databaseType, dbPath);
+  
   try {
-    const db = new Database(dbPath);
+    await adapter.connect();
     
     // Get primary key column
-    const schema = db.prepare(`PRAGMA table_info(${tableName})`).all();
-    const pkColumn = schema.find(col => col.pk === 1);
+    const schema = await adapter.getTableSchema(tableName);
+    const pkColumn = schema.find(col => col.primaryKey);
     
     if (!pkColumn) {
+      await adapter.disconnect();
       throw new Error('Table has no primary key');
     }
     
-    // Build UPDATE query
-    const columns = Object.keys(data);
-    const setClause = columns.map(col => `${col} = ?`).join(', ');
-    const values = columns.map(col => data[col]);
-    
-    const stmt = db.prepare(`UPDATE ${tableName} SET ${setClause} WHERE ${pkColumn.name} = ?`);
-    const result = stmt.run(...values, rowId);
-    
-    db.close();
+    const result = await adapter.updateRow(tableName, pkColumn.name, rowId, data);
+    await adapter.disconnect();
     return result;
   } catch (error) {
     console.error('Error updating row:', error);
+    await adapter.disconnect();
     throw error;
   }
 });
 
 // Delete row
-ipcMain.handle('delete-row', async (event, wpDirectory, tableName, rowId) => {
+ipcMain.handle('delete-row', async (event, wpDirectory, tableName, rowId, databaseType) => {
   const dbPath = getDatabasePath(wpDirectory);
+  const adapter = createDatabaseAdapter(wpDirectory, databaseType, dbPath);
+  
   try {
-    const db = new Database(dbPath);
+    await adapter.connect();
     
     // Get primary key column
-    const schema = db.prepare(`PRAGMA table_info(${tableName})`).all();
-    const pkColumn = schema.find(col => col.pk === 1);
+    const schema = await adapter.getTableSchema(tableName);
+    const pkColumn = schema.find(col => col.primaryKey);
     
     if (!pkColumn) {
+      await adapter.disconnect();
       throw new Error('Table has no primary key');
     }
     
-    const stmt = db.prepare(`DELETE FROM ${tableName} WHERE ${pkColumn.name} = ?`);
-    const result = stmt.run(rowId);
-    
-    db.close();
+    const result = await adapter.deleteRow(tableName, pkColumn.name, rowId);
+    await adapter.disconnect();
     return result;
   } catch (error) {
     console.error('Error deleting row:', error);
+    await adapter.disconnect();
     throw error;
   }
 });
 
 // Insert row
-ipcMain.handle('insert-row', async (event, wpDirectory, tableName, data) => {
+ipcMain.handle('insert-row', async (event, wpDirectory, tableName, data, databaseType) => {
   const dbPath = getDatabasePath(wpDirectory);
+  const adapter = createDatabaseAdapter(wpDirectory, databaseType, dbPath);
+  
   try {
-    const db = new Database(dbPath);
-    
-    // Build INSERT query
-    const columns = Object.keys(data);
-    const placeholders = columns.map(() => '?').join(', ');
-    const values = columns.map(col => data[col]);
-    
-    const stmt = db.prepare(`INSERT INTO ${tableName} (${columns.join(', ')}) VALUES (${placeholders})`);
-    const result = stmt.run(...values);
-    
-    db.close();
+    await adapter.connect();
+    const result = await adapter.insertRow(tableName, data);
+    await adapter.disconnect();
     return result;
   } catch (error) {
     console.error('Error inserting row:', error);
+    await adapter.disconnect();
     throw error;
   }
 });

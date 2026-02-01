@@ -3,7 +3,7 @@ import { PencilSquareIcon, TrashIcon, PlusIcon } from '@heroicons/react/24/outli
 import EditRowModal from './EditRowModal';
 import AddRowModal from './AddRowModal';
 
-const TableViewer = ({ directory, tableName }) => {
+const TableViewer = ({ directory, tableName, databaseType }) => {
   const [tableData, setTableData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(0);
@@ -17,7 +17,7 @@ const TableViewer = ({ directory, tableName }) => {
   useEffect(() => {
     loadTableData();
     loadRowCount();
-  }, [directory, tableName, currentPage]);
+  }, [directory, tableName, currentPage, databaseType]);
 
   const loadTableData = async () => {
     setLoading(true);
@@ -26,7 +26,8 @@ const TableViewer = ({ directory, tableName }) => {
         directory, 
         tableName, 
         currentPage * rowsPerPage, 
-        rowsPerPage
+        rowsPerPage,
+        databaseType
       );
       setTableData(data);
     } catch (error) {
@@ -37,7 +38,7 @@ const TableViewer = ({ directory, tableName }) => {
 
   const loadRowCount = async () => {
     try {
-      const count = await window.electronAPI.getTableRowCount(directory, tableName);
+      const count = await window.electronAPI.getTableRowCount(directory, tableName, databaseType);
       setTotalRows(count);
     } catch (error) {
       console.error('Error loading row count:', error);
@@ -50,7 +51,7 @@ const TableViewer = ({ directory, tableName }) => {
     }
     
     try {
-      await window.electronAPI.deleteRow(directory, tableName, rowId);
+      await window.electronAPI.deleteRow(directory, tableName, rowId, databaseType);
       await loadTableData();
       await loadRowCount();
     } catch (error) {
@@ -65,7 +66,7 @@ const TableViewer = ({ directory, tableName }) => {
 
   const handleSaveRow = async (rowId, data) => {
     try {
-      await window.electronAPI.updateRow(directory, tableName, rowId, data);
+      await window.electronAPI.updateRow(directory, tableName, rowId, data, databaseType);
       setEditingRow(null);
       await loadTableData();
     } catch (error) {
@@ -76,7 +77,7 @@ const TableViewer = ({ directory, tableName }) => {
 
   const handleAddRow = async (data) => {
     try {
-      await window.electronAPI.insertRow(directory, tableName, data);
+      await window.electronAPI.insertRow(directory, tableName, data, databaseType);
       setAddingRow(false);
       await loadTableData();
       await loadRowCount();
@@ -99,7 +100,7 @@ const TableViewer = ({ directory, tableName }) => {
   }
 
   const totalPages = Math.ceil(totalRows / rowsPerPage);
-  const pkColumn = tableData.schema.find(col => col.pk === 1);
+  const pkColumn = tableData.schema.find(col => col.primaryKey === true);
 
   // Filter data based on search query and selected column
   const filteredData = tableData.data.filter(row => {
@@ -170,7 +171,7 @@ const TableViewer = ({ directory, tableName }) => {
               {tableData.columns.map((column) => (
                 <th key={column} className="px-4 py-2 text-left font-semibold text-gray-700 border-b border-gray-200">
                   {column}
-                  {tableData.schema.find(col => col.name === column)?.pk === 1 && (
+                  {tableData.schema.find(col => col.name === column)?.primaryKey === true && (
                     <span className="ml-1 text-xs text-blue-600">(PK)</span>
                   )}
                 </th>

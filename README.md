@@ -2,7 +2,7 @@
 
 <img src="https://github.com/jonathanbossenger/wp-sqlite/blob/main/assets/icons/icon.png" width="48">
 
-A desktop application for viewing and editing SQLite databases in [WordPress Studio](https://developer.wordpress.com/studio/) installations. Built with Electron and React.
+A desktop application for viewing and editing databases in WordPress installations. Supports both SQLite (WordPress Studio) and MySQL databases. Built with Electron and React.
 
 ## Table of Contents
 - [Features](#features)
@@ -17,22 +17,37 @@ A desktop application for viewing and editing SQLite databases in [WordPress Stu
 
 ## Features
 
-- WordPress Studio Integration
-  - Automatic detection of WordPress Studio installations
+- **Multi-Database Support**
+  - SQLite databases (WordPress Studio installations)
+  - MySQL databases (traditional WordPress installations)
+  - Automatic database type detection
+  - Choose between database types when both are available
+  - Visual database type indicator (SQLite/MySQL badge)
+  
+- **WordPress Integration**
+  - Automatic detection of WordPress installations
   - Finds SQLite database in wp-content/database/.ht.sqlite
+  - Reads MySQL credentials from wp-config.php
   - Recent directories support for quick access
-- Database Viewing
+  - Localhost-only MySQL connections for security
+  
+- **Database Viewing**
   - View all tables in the database
   - Browse table data with pagination (50 rows per page)
   - View table schema with primary key indicators
   - Search/filter within table data by specific columns or all columns
-- Data Editing
+  
+- **Data Editing**
   - Edit existing rows with modal editor
   - Delete rows (with confirmation)
+  - Add new rows
   - Automatic data type detection
   - Primary key protection
-- Clean, modern UI with real-time updates
-- Cross-platform support (macOS, Windows, Linux)
+  
+- **User Interface**
+  - Clean, modern UI with real-time updates
+  - Cross-platform support (macOS, Windows, Linux)
+  - Responsive design
 
 ## Screenshots
 
@@ -50,7 +65,9 @@ A desktop application for viewing and editing SQLite databases in [WordPress Stu
 
 - Node.js 18.x or higher
 - npm 9.x or higher
-- A [WordPress Studio](https://developer.wordpress.com/studio/) installation for testing ([GitHub](https://github.com/Automattic/studio/))
+- For testing:
+  - A [WordPress Studio](https://developer.wordpress.com/studio/) installation ([GitHub](https://github.com/Automattic/studio/)) for SQLite support
+  - Or a traditional WordPress installation with MySQL for MySQL support
 
 ## Development Setup
 
@@ -138,43 +155,82 @@ Users can then download and install the appropriate version for their operating 
 
 ## Usage
 
+### Getting Started
+
 1. Launch the application
-2. Select your WordPress Studio installation directory
-3. The app will automatically:
-   - Detect the SQLite database at wp-content/database/.ht.sqlite
-   - Load the list of tables
-4. Select a table to view its data
-5. Use pagination controls to navigate through rows
-6. Edit or delete rows as needed
-7. Use the column dropdown and search box to filter data by specific columns
+2. Select your WordPress installation directory
+3. The app will automatically detect available database types:
+   - **SQLite**: Found at wp-content/database/.ht.sqlite (WordPress Studio)
+   - **MySQL**: Credentials from wp-config.php (traditional WordPress)
+4. If both database types are available, choose which one to use
+5. Browse the list of tables and select one to view its data
 
-### Editing Data
+### Working with Data
 
-1. Click "Edit" on any row to open the edit modal
-2. Modify the values (primary key fields are read-only)
-3. Click "Save Changes" to update the row
-4. Changes are immediately saved to the database
+**Viewing Tables:**
+- Select a table from the list on the left
+- Use pagination controls to navigate through rows (50 rows per page)
+- Primary key columns are marked with (PK)
+- The database type badge (SQLite/MySQL) shows which database you're viewing
 
-### Deleting Data
-
-1. Click "Delete" on any row
-2. Confirm the deletion
-3. The row is permanently removed from the database
-
-### Searching Data
-
+**Searching/Filtering:**
 1. Select a column from the dropdown menu (or "All Columns" to search across all fields)
 2. Type your search query in the search box
 3. The table will automatically filter to show only matching rows
 4. The search is case-insensitive and matches partial text
 
+**Editing Data:**
+1. Click "Edit" on any row to open the edit modal
+2. Modify the values (primary key fields are read-only)
+3. Click "Save Changes" to update the row
+4. Changes are immediately saved to the database
+
+**Adding Rows:**
+1. Click the "Add Row" button
+2. Fill in the values for each field
+3. Auto-increment primary keys are automatically hidden
+4. Click "Save" to insert the new row
+
+**Deleting Data:**
+1. Click "Delete" on any row
+2. Confirm the deletion
+3. The row is permanently removed from the database
+
+### MySQL Support
+
+**Requirements:**
+- MySQL server must be running on localhost (127.0.0.1)
+- Valid wp-config.php with database credentials
+- Database credentials must be for a localhost MySQL server (remote connections are blocked for security)
+
+**Security:**
+- MySQL credentials are read fresh from wp-config.php on each connection
+- Credentials are never cached or stored
+- Only localhost connections are permitted
+- All queries use parameterized statements to prevent SQL injection
+
+**Switching Database Types:**
+To switch between SQLite and MySQL (when both are available):
+1. Click "Change Directory"
+2. Select the same directory again
+3. Choose the database type you want to use
+
 ## Technical Stack
 
-- Electron - Desktop application framework
-- React - UI framework
-- Tailwind CSS - Styling and responsive design
-- better-sqlite3 - SQLite database interface
-- Sharp - Image processing for icons
+- **Desktop Framework:** Electron
+- **UI Framework:** React
+- **Styling:** Tailwind CSS
+- **Database Access:**
+  - better-sqlite3 - SQLite database interface
+  - mysql2 - MySQL database interface
+- **Build Tools:**
+  - Webpack - Module bundler
+  - Electron Forge - Building and packaging
+- **Other:**
+  - Sharp - Image processing for icons
+  - electron-store - Persistent storage for user preferences
+
+For detailed implementation information about MySQL support, see [MYSQL-SUPPORT.md](MYSQL-SUPPORT.md).
 
 ## Development Scripts
 

@@ -4,10 +4,11 @@ const AddRowModal = ({ columns, schema, pkColumn, onSave, onClose }) => {
   // Helper function to determine if a field should be shown in the form
   const shouldShowField = (columnSchema) => {
     // Don't show auto-increment primary keys
-    if (columnSchema.pk === 1) {
+    if (columnSchema.primaryKey === true) {
       const type = columnSchema.type.toLowerCase();
       // For SQLite, INTEGER PRIMARY KEY is auto-increment by default
-      if (type.includes('integer')) {
+      // For MySQL, check for AUTO_INCREMENT in type or default value
+      if (type.includes('integer') || type.includes('auto_increment')) {
         return false;
       }
     }
@@ -71,7 +72,7 @@ const AddRowModal = ({ columns, schema, pkColumn, onSave, onClose }) => {
           <div className="space-y-4">
             {columns.map((column) => {
               const columnSchema = schema.find(col => col.name === column);
-              const isPrimaryKey = columnSchema.pk === 1;
+              const isPrimaryKey = columnSchema.primaryKey === true;
               
               if (!shouldShowField(columnSchema)) {
                 return null;
