@@ -87,6 +87,12 @@ npm install
 npm run dev
 ```
 
+**Linux users:** If you encounter a sandbox error about `chrome-sandbox`, you need to fix the Electron sandbox permissions:
+```bash
+sudo chown root:root node_modules/electron/dist/chrome-sandbox
+sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
+```
+
 This will:
 - Generate application icons
 - Start webpack in watch mode for the renderer process
