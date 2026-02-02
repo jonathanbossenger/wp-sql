@@ -1,12 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import RecentDirectories from './components/RecentDirectories';
 import DatabaseViewer from './components/DatabaseViewer';
+import DatabaseTypeSelector from './components/DatabaseTypeSelector';
 
 function App() {
   const [selectedDirectory, setSelectedDirectory] = useState(null);
   const [isSelecting, setIsSelecting] = useState(false);
   const [error, setError] = useState(null);
   const [recentDirectories, setRecentDirectories] = useState([]);
+  const [databaseTypes, setDatabaseTypes] = useState([]);
+  const [selectedDatabaseType, setSelectedDatabaseType] = useState(null);
+  const [needsDatabaseTypeSelection, setNeedsDatabaseTypeSelection] = useState(false);
 
   const loadRecentDirectories = async () => {
     try {
@@ -27,15 +31,55 @@ function App() {
     try {
       const directory = await window.electronAPI.selectDirectory();
       if (directory) {
-        setSelectedDirectory(directory);
-        await loadRecentDirectories();
+        await handleDirectorySelected(directory);
       }
     } catch (error) {
       console.error('Error selecting directory:', error);
-      setError(error.message || 'Error selecting WordPress Studio directory');
+      setError(error.message || 'Error selecting WordPress directory');
       setSelectedDirectory(null);
+      setSelectedDatabaseType(null);
+      setNeedsDatabaseTypeSelection(false);
     }
     setIsSelecting(false);
+  };
+
+  const handleDirectorySelected = async (directory) => {
+    // Get available database types
+    const types = await window.electronAPI.getDatabaseTypes(directory);
+    setDatabaseTypes(types);
+
+    if (types.length === 0) {
+      setError('No database found in selected directory');
+      return;
+    }
+
+    if (types.length === 1) {
+      // Only one type available, select it automatically
+      await selectDatabaseType(directory, types[0]);
+    } else {
+      // Multiple types available, check if user has a previous selection
+      const savedType = await window.electronAPI.getSelectedDatabaseType(directory);
+      if (savedType && types.includes(savedType)) {
+        await selectDatabaseType(directory, savedType);
+      } else {
+        // Show selection dialog
+        setSelectedDirectory(directory);
+        setNeedsDatabaseTypeSelection(true);
+      }
+    }
+  };
+
+  const handleDatabaseTypeSelected = async (type) => {
+    if (!selectedDirectory) return;
+    await selectDatabaseType(selectedDirectory, type);
+  };
+
+  const selectDatabaseType = async (directory, type) => {
+    await window.electronAPI.selectDatabaseType(directory, type);
+    setSelectedDirectory(directory);
+    setSelectedDatabaseType(type);
+    setNeedsDatabaseTypeSelection(false);
+    await loadRecentDirectories();
   };
 
   const handleSelectRecentDirectory = async (directory) => {
@@ -44,13 +88,14 @@ function App() {
     try {
       const validatedDirectory = await window.electronAPI.selectRecentDirectory(directory);
       if (validatedDirectory) {
-        setSelectedDirectory(validatedDirectory);
-        await loadRecentDirectories();
+        await handleDirectorySelected(validatedDirectory);
       }
     } catch (error) {
       console.error('Error selecting directory:', error);
-      setError(error.message || 'Error selecting WordPress Studio directory');
+      setError(error.message || 'Error selecting WordPress directory');
       setSelectedDirectory(null);
+      setSelectedDatabaseType(null);
+      setNeedsDatabaseTypeSelection(false);
       await loadRecentDirectories();
     }
     setIsSelecting(false);
@@ -73,9 +118,17 @@ function App() {
             )}
           </div>
           
-          {selectedDirectory ? (
+          {needsDatabaseTypeSelection ? (
+            <div className="flex-1 flex items-center justify-center p-6">
+              <DatabaseTypeSelector
+                onSelectType={handleDatabaseTypeSelected}
+                isSelecting={isSelecting}
+              />
+            </div>
+          ) : selectedDirectory && selectedDatabaseType ? (
             <DatabaseViewer 
               directory={selectedDirectory}
+              databaseType={selectedDatabaseType}
               onChangeDirectory={handleSelectDirectory}
               isSelecting={isSelecting}
               onQuit={handleQuit}
@@ -84,7 +137,7 @@ function App() {
             <div className="flex-1 flex items-center justify-center p-6">
               <div className="text-center">
                 <h2 className="text-2xl font-semibold text-gray-800 mb-6">
-                  Select your WordPress Studio installation directory
+                  Select your WordPress installation directory
                 </h2>
                 
                 <RecentDirectories 

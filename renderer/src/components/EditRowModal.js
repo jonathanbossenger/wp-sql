@@ -48,7 +48,7 @@ const EditRowModal = ({ row, columns, schema, pkColumn, onSave, onClose }) => {
           <div className="space-y-4">
             {columns.map((column) => {
               const columnSchema = schema.find(col => col.name === column);
-              const isPrimaryKey = columnSchema.pk === 1;
+              const isPrimaryKey = columnSchema.primaryKey === true;
               
               return (
                 <div key={column}>
