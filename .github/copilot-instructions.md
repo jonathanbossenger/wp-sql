@@ -1,8 +1,8 @@
-# GitHub Copilot Instructions for WP SQLite
+# GitHub Copilot Instructions for WP SQL
 
 ## Project Overview
 
-WP SQLite is a desktop application for viewing and editing databases in WordPress installations. It supports both SQLite (WordPress Studio) and MySQL (traditional WordPress) databases. Built with Electron and React, providing a user-friendly interface for database management.
+WP SQL is a desktop application for viewing and editing databases in WordPress installations. It supports both SQLite (WordPress Studio) and MySQL (traditional WordPress) databases. Built with Electron and React, providing a user-friendly interface for database management.
 
 WordPress Studio is a desktop application for local WordPress development. For more information, see the [Studio GitHub repository](https://github.com/Automattic/studio/).
 
@@ -19,7 +19,7 @@ WordPress Studio is a desktop application for local WordPress development. For m
 ## Project Structure
 
 ```
-wp-sqlite/
+wp-sql/
 ├── main/
 │   ├── index.js                 # Main Electron process with IPC handlers
 │   ├── database-abstraction.js  # Database adapter layer (SQLite & MySQL)

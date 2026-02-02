@@ -1,15 +1,15 @@
 module.exports = {
   packagerConfig: {
     asar: true,
-    name: 'WP SQLite',
-    executableName: 'wp-sqlite',
+    name: 'WP SQL',
+    executableName: 'wp-sql',
     icon: './assets/icons/icon',
-    appBundleId: 'com.wp-sqlite.app',
+    appBundleId: 'com.wp-sql.app',
     appCategoryType: 'public.app-category.developer-tools',
     protocols: [
       {
-        name: 'WP SQLite',
-        schemes: ['wp-sqlite']
+        name: 'WP SQL',
+        schemes: ['wp-sql']
       }
     ],
   },
@@ -18,7 +18,7 @@ module.exports = {
     {
       name: '@electron-forge/maker-squirrel',
       config: {
-        name: 'wp-sqlite',
+        name: 'wp-sql',
         icon: './assets/icons/icon.ico',
         setupIcon: './assets/icons/icon.ico'
       },
@@ -35,8 +35,8 @@ module.exports = {
       config: {
         options: {
           icon: './assets/icons/icon.png',
-          name: 'wp-sqlite',
-          productName: 'WP SQLite',
+          name: 'wp-sql',
+          productName: 'WP SQL',
           categories: ['Development']
         }
       },
@@ -46,8 +46,8 @@ module.exports = {
       config: {
         options: {
           icon: './assets/icons/icon.png',
-          name: 'wp-sqlite',
-          productName: 'WP SQLite',
+          name: 'wp-sql',
+          productName: 'WP SQL',
           categories: ['Development']
         }
       },
@@ -82,7 +82,7 @@ module.exports = {
       config: {
         repository: {
           owner: 'jonathanbossenger',
-          name: 'wp-sqlite'
+          name: 'wp-sql'
         },
         prerelease: false
       }

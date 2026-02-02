@@ -110,7 +110,7 @@ function App() {
       <div className="flex-1 p-4 overflow-hidden">
         <div className="h-full flex flex-col bg-white rounded-xl shadow-lg">
           <div className="p-6 flex-none">
-            <h1 className="text-3xl font-bold text-gray-800">WP SQLite Database Viewer</h1>
+            <h1 className="text-3xl font-bold text-gray-800">WP SQL Database Viewer</h1>
             {error && (
               <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
                 <p className="text-red-700">{error}</p>
