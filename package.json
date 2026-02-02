@@ -1,7 +1,7 @@
 {
-  "name": "wp-sqlite",
+  "name": "wp-sql",
   "version": "1.0.1",
-  "description": "An app to open, view, and edit data in a sqlite database for WordPress Studio",
+  "description": "An app to open, view, and edit data in databases for WordPress (SQLite and MySQL support)",
   "main": "main/index.js",
   "scripts": {
     "start": "electron .",
@@ -17,6 +17,7 @@
     "desktop",
     "WordPress",
     "SQLite",
+    "MySQL",
     "database"
   ],
   "author": "Jonathan Bossenger",

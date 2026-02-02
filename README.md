@@ -1,6 +1,6 @@
-# WP SQLite
+# WP SQL
 
-<img src="https://github.com/jonathanbossenger/wp-sqlite/blob/main/assets/icons/icon.png" width="48">
+<img src="https://github.com/jonathanbossenger/wp-sql/blob/main/assets/icons/icon.png" width="48">
 
 A desktop application for viewing and editing databases in WordPress installations. Supports both SQLite (WordPress Studio) and MySQL databases. Built with Electron and React.
 
@@ -52,7 +52,7 @@ A desktop application for viewing and editing databases in WordPress installatio
 ## Screenshots
 
 ### Main Application Interface
-![WP SQLite Application](screenshots/Screenshot-01.png)
+![WP SQL Application](screenshots/Screenshot-01.png)
 
 ### Additional Views
 <p align="center">
@@ -73,8 +73,8 @@ A desktop application for viewing and editing databases in WordPress installatio
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/jonathanbossenger/wp-sqlite.git
-cd wp-sqlite
+git clone https://github.com/jonathanbossenger/wp-sql.git
+cd wp-sql
 ```
 
 2. Install dependencies:

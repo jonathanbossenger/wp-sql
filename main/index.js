@@ -82,7 +82,7 @@ const createWindow = () => {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 900,
-    title: 'WP SQLite',
+    title: 'WP SQL',
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: true,
@@ -102,15 +102,15 @@ const createWindow = () => {
 const createMenu = () => {
   const template = [
     {
-      label: 'WP SQLite',
+      label: 'WP SQL',
       submenu: [
         {
-          label: 'About WP SQLite',
+          label: 'About WP SQL',
           click: () => {
             const aboutWindow = new BrowserWindow({
               width: 300,
               height: 340,
-              title: 'About WP SQLite',
+              title: 'About WP SQL',
               resizable: false,
               minimizable: false,
               maximizable: false,
