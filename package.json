@@ -1,6 +1,6 @@
 {
   "name": "wp-sql",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "An app to open, view, and edit data in databases for WordPress (SQLite and MySQL support)",
   "main": "main/index.js",
   "scripts": {
